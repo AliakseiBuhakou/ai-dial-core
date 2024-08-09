@@ -142,6 +142,43 @@ public class ProxyUtilTest {
     }
 
     @Test
+    public void testCollectAttachedFiles_OriginRequest() throws IOException {
+        String content = """
+            {
+                 "messages": [
+                   {
+                     "role": "user",
+                     "content": [
+                         {
+                             "type": "text",
+                             "text":  "what is on image"
+                         },
+                         {
+                             "type": "image_url",
+                             "image_url": {
+                                 "url": "files/BbuBnPpLQCQDS6FYd78GdMXnZwfw7oqufMiEk9ESdV47/img/apple.jpeg"
+                             }
+                         }
+                     ]
+                   }
+                 ],
+                 "temperature": 0.1,
+                 "stream":false
+             }
+                """;
+        ObjectNode tree = (ObjectNode) ProxyUtil.MAPPER.readTree(content.getBytes());
+        ApiKeyData apiKeyData = new ApiKeyData();
+        ProxyUtil.collectAttachedFilesFromRequest(tree, link -> apiKeyData.getAttachedFiles().put(link, new AutoSharedData(ResourceAccessType.READ_ONLY)));
+
+        assertEquals(
+            Map.of(
+                "files/BbuBnPpLQCQDS6FYd78GdMXnZwfw7oqufMiEk9ESdV47/img/apple.jpeg",
+                new AutoSharedData(ResourceAccessType.READ_ONLY)),
+            apiKeyData.getAttachedFiles()
+        );
+    }
+
+    @Test
     public void testCollectAttachedFiles_Fail() throws IOException {
         String content = """
                 {

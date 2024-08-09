@@ -8,7 +8,9 @@ import com.epam.aidial.core.config.Config;
 import com.epam.aidial.core.config.Model;
 import com.epam.aidial.core.limiter.RateLimiter;
 import com.epam.aidial.core.log.LogStore;
+import com.epam.aidial.core.security.AccessService;
 import com.epam.aidial.core.security.ApiKeyStore;
+import com.epam.aidial.core.storage.ResourceDescription;
 import com.epam.aidial.core.token.TokenStatsTracker;
 import com.epam.aidial.core.token.TokenUsage;
 import com.epam.aidial.core.upstream.UpstreamBalancer;
@@ -82,6 +84,9 @@ public class DeploymentPostControllerTest {
 
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private TokenStatsTracker tokenStatsTracker;
+
+    @Mock
+    private AccessService accessService;
 
     @Mock
     private Vertx vertx;
@@ -258,7 +263,6 @@ public class DeploymentPostControllerTest {
         byte[] content = updatedBody.getBytes();
         ObjectNode tree = (ObjectNode) ProxyUtil.MAPPER.readTree(content);
         assertEquals(tree.get("model").asText(), "overrideName");
-
     }
 
     @Test
@@ -291,6 +295,62 @@ public class DeploymentPostControllerTest {
 
         assertEquals(requestBody, context.getRequestBody());
 
+    }
+
+    @Test
+    public void testHandleRequestBody_OriginRequest() throws IOException {
+        when(context.getRequest()).thenReturn(request);
+        UpstreamRoute upstreamRoute = mock(UpstreamRoute.class, RETURNS_DEEP_STUBS);
+        when(upstreamRoute.hasNext()).thenReturn(true);
+        when(context.getApiKeyData()).thenReturn(new ApiKeyData());
+        when(context.getProxyApiKeyData()).thenReturn(new ApiKeyData());
+        when(proxy.getAccessService()).thenReturn(accessService);
+        when(accessService.hasReadAccess(any(ResourceDescription.class), any(ProxyContext.class)))
+            .thenReturn(true);
+        when(context.getUpstreamRoute()).thenReturn(upstreamRoute);
+        HttpServerRequest request = mock(HttpServerRequest.class, RETURNS_DEEP_STUBS);
+        when(context.getRequest()).thenReturn(request);
+        when(proxy.getClient()).thenReturn(mock(HttpClient.class, RETURNS_DEEP_STUBS));
+        when(proxy.getApiKeyStore()).thenReturn(mock(ApiKeyStore.class));
+
+        Model model = new Model();
+        model.setName("test");
+        model.setEndpoint("http://host/test");
+        when(context.getDeployment()).thenReturn(model);
+        String body = """
+            {
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text":  "what is on image"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "files/public/img/apple.jpeg"
+                            }
+                        }
+                    ]
+                  }
+                ],
+                "temperature": 0.1,
+                "stream":false
+            }
+                """;
+        Buffer requestBody = Buffer.buffer(body);
+        when(context.getRequestBody()).thenCallRealMethod();
+        doCallRealMethod().when(context).setRequestBody(any());
+
+        controller.handleRequestBody(requestBody);
+
+        Buffer resultBody = context.getRequestBody();
+        assertNotNull(resultBody);
+
+        byte[] content = resultBody.getBytes();
+        assertEquals(body, resultBody.toString());
     }
 
     @Test

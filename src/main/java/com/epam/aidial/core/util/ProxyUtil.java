@@ -168,31 +168,55 @@ public class ProxyUtil {
         }
         for (int i = 0; i < messages.size(); i++) {
             JsonNode message = messages.get(i);
-            JsonNode customContent = message.get("custom_content");
-            if (customContent == null) {
-                continue;
+            JsonNode content = message.get("content");
+            if (content.isArray()) {
+                processOriginalContent(consumer, content);
+            } else {
+                processCustomContent(consumer, message.get("custom_content"));
             }
-            ArrayNode attachments = (ArrayNode) customContent.get("attachments");
-            if (attachments != null) {
-                for (int j = 0; j < attachments.size(); j++) {
-                    JsonNode attachment = attachments.get(j);
+        }
+    }
+
+    private static void processCustomContent(Consumer<String> consumer, JsonNode customContent) {
+        if (customContent == null) {
+            return;
+        }
+        ArrayNode attachments = (ArrayNode) customContent.get("attachments");
+        if (attachments != null) {
+            for (int j = 0; j < attachments.size(); j++) {
+                JsonNode attachment = attachments.get(j);
+                collectAttachedFile(attachment, consumer);
+            }
+        }
+        ArrayNode stages = (ArrayNode) customContent.get("stages");
+        if (stages != null) {
+            for (int j = 0; j < stages.size(); j++) {
+                JsonNode stage = stages.get(j);
+                attachments = (ArrayNode) stage.get("attachments");
+                if (attachments == null) {
+                    continue;
+                }
+                for (int k = 0; k < attachments.size(); k++) {
+                    JsonNode attachment = attachments.get(k);
                     collectAttachedFile(attachment, consumer);
                 }
             }
-            ArrayNode stages = (ArrayNode) customContent.get("stages");
-            if (stages != null) {
-                for (int j = 0; j < stages.size(); j++) {
-                    JsonNode stage = stages.get(j);
-                    attachments = (ArrayNode) stage.get("attachments");
-                    if (attachments == null) {
-                        continue;
-                    }
-                    for (int k = 0; k < attachments.size(); k++) {
-                        JsonNode attachment = attachments.get(k);
-                        collectAttachedFile(attachment, consumer);
-                    }
+        }
+    }
+
+    private static void processOriginalContent(Consumer<String> consumer, JsonNode content) {
+        for (int i = 0; i < content.size(); i++) {
+            JsonNode current = content.get(i);
+            String type = current.get("type").textValue();
+            if (type.equalsIgnoreCase("image_url")) {
+                JsonNode imageNode = current.get("image_url");
+                if (imageNode == null) {
+                    return;
                 }
+
+                collectAttachedFile(imageNode, consumer);
             }
+
         }
     }
 
