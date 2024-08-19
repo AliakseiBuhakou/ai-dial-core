@@ -4,6 +4,7 @@ import com.epam.aidial.core.Proxy;
 import com.epam.aidial.core.ProxyContext;
 import com.epam.aidial.core.config.ApiKeyData;
 import com.epam.aidial.core.config.Application;
+import com.epam.aidial.core.config.Assistant;
 import com.epam.aidial.core.config.Config;
 import com.epam.aidial.core.config.Model;
 import com.epam.aidial.core.limiter.RateLimiter;
@@ -30,6 +31,7 @@ import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.http.impl.headers.HeadersMultiMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
@@ -87,6 +89,9 @@ public class DeploymentPostControllerTest {
 
     @Mock
     private AccessService accessService;
+
+    @Mock
+    private Assistant assistant;
 
     @Mock
     private Vertx vertx;
@@ -298,7 +303,7 @@ public class DeploymentPostControllerTest {
     }
 
     @Test
-    public void testHandleRequestBody_OriginRequest() throws IOException {
+    public void testHandleRequestBody_OriginRequest() {
         when(context.getRequest()).thenReturn(request);
         UpstreamRoute upstreamRoute = mock(UpstreamRoute.class, RETURNS_DEEP_STUBS);
         when(upstreamRoute.hasNext()).thenReturn(true);
@@ -351,6 +356,58 @@ public class DeploymentPostControllerTest {
 
         byte[] content = resultBody.getBytes();
         assertEquals(body, resultBody.toString());
+    }
+
+    @Test
+    public void testHandleRequestBody_OriginRequestOverrideAssistantPrompt() {
+        when(context.getRequest()).thenReturn(request);
+        UpstreamRoute upstreamRoute = mock(UpstreamRoute.class, RETURNS_DEEP_STUBS);
+        when(upstreamRoute.hasNext()).thenReturn(true);
+        when(context.getUpstreamRoute()).thenReturn(upstreamRoute);
+        HttpServerRequest request = mock(HttpServerRequest.class, RETURNS_DEEP_STUBS);
+        when(context.getRequest()).thenReturn(request);
+        when(proxy.getClient()).thenReturn(mock(HttpClient.class, RETURNS_DEEP_STUBS));
+        when(proxy.getApiKeyStore()).thenReturn(mock(ApiKeyStore.class));
+
+        Map<String, Model> models = new HashMap<>();
+        models.put("name", new Model());
+        Config config = new Config();
+        config.setModels(models);
+        when(context.getConfig()).thenReturn(config);
+        when(context.getDeployment()).thenReturn(assistant);
+        when(assistant.getEndpoint()).thenReturn("http:/test");
+        when(assistant.getPrompt()).thenReturn("new Prompt Value");
+
+        String body = """
+            {
+                "messages": [
+                  {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text":  "what is on image"
+                        }
+                    ]
+                  }
+                ],
+                "model": "name",
+                "temperature": 0.1,
+                "stream":false
+            }
+                """;
+        Buffer requestBody = Buffer.buffer(body);
+        when(context.getRequestBody()).thenCallRealMethod();
+        doCallRealMethod().when(context).setRequestBody(any());
+
+        controller.handleRequestBody(requestBody);
+
+        Buffer resultBody = context.getRequestBody();
+        assertNotNull(resultBody);
+
+        assertEquals(
+            "{\"messages\":[{\"role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"new Prompt Value\"}]}],\"model\":\"name\",\"temperature\":0.1,\"stream\":false,\"addons\":[]}",
+            resultBody.toString());
     }
 
     @Test

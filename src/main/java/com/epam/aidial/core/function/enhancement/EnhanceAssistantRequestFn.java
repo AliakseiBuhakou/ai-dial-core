@@ -14,6 +14,7 @@ import com.epam.aidial.core.util.HttpStatus;
 import com.epam.aidial.core.util.ProxyUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.vertx.core.buffer.Buffer;
 import lombok.extern.slf4j.Slf4j;
@@ -58,10 +59,10 @@ public class EnhanceAssistantRequestFn extends BaseRequestFunction<ObjectNode> {
         Assistant assistant = (Assistant) context.getDeployment();
 
 
-        ArrayNode messages = (ArrayNode) tree.get("messages");
         if (assistant.getPrompt() != null) {
-            deletePrompt(messages);
-            insertPrompt(messages, assistant.getPrompt());
+            ArrayNode messages = (ArrayNode) tree.get("messages");
+            boolean isOriginalRequest = deletePrompt(messages);
+            insertPrompt(messages, assistant.getPrompt(), isOriginalRequest);
         }
 
         Set<String> names = new LinkedHashSet<>(assistant.getAddons());
@@ -112,20 +113,39 @@ public class EnhanceAssistantRequestFn extends BaseRequestFunction<ObjectNode> {
         return Map.entry(updatedBody, headers);
     }
 
-    private static void deletePrompt(ArrayNode messages) {
+    private static boolean deletePrompt(ArrayNode messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             JsonNode message = messages.get(i);
             String role = message.get("role").asText("");
 
             if ("system".equals(role)) {
+                JsonNode content = message.get("content");
                 messages.remove(i);
+                return content != null && content.isArray();
             }
+        }
+        return false;
+    }
+
+    private static void insertPrompt(ArrayNode messages, String prompt, boolean isOriginalRequest) {
+        if (isOriginalRequest) {
+            insertPromptForOriginRequest(messages, prompt);
+
+        } else {
+            messages.insertObject(0)
+                .put("role", "system")
+                .put("content", prompt);
         }
     }
 
-    private static void insertPrompt(ArrayNode messages, String prompt) {
-        messages.insertObject(0)
-                .put("role", "system")
-                .put("content", prompt);
+    private static void insertPromptForOriginRequest(ArrayNode messages, String prompt) {
+        ArrayNode content = messages.insertObject(0)
+            .put("role", "system")
+            .putArray("content");
+
+        ObjectNode text = JsonNodeFactory.instance.objectNode();
+        text.put("type", "text");
+        text.put("text", prompt);
+        content.add(text);
     }
 }
